@@ -1,0 +1,5 @@
+.*.sw*
+*.pyc
+*.zip
+*.data
+*.dim
