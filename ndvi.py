@@ -1,51 +1,40 @@
 import sys
 
 import numpy
-from snappy import Product
-from snappy import ProductData
-from snappy import ProductIO
-from snappy import ProductUtils
+from snappy import Product, ProductData, ProductIO, ProductUtils
 
-if len(sys.argv) != 2:
-    print("usage: %s <file>" % sys.argv[0])
+if len(sys.argv) < 2:
+    print 'Product file requires'
     sys.exit(1)
 
-print("Reading...")
-product = ProductIO.readProduct(sys.argv[1])
-width = product.getSceneRasterWidth()
-height = product.getSceneRasterHeight()
-name = product.getName()
-description = product.getDescription()
-band_names = product.getBandNames()
+# input product & dimensions
+input_product = ProductIO.readProduct(sys.argv[1])
+width = input_product.getSceneRasterWidth()
+height = input_product.getSceneRasterHeight()
+product_name = input_product.getName()
 
-print("Product:     %s, %s" % (name, description))
-print("Raster size: %d x %d pixels" % (width, height))
-print("Bands:       %s" % (list(band_names)))
+# input product red & nir bands
+red_band = input_product.getBand('B4')
+nir_band = input_product.getBand('B8')
 
-red = product.getBand('B4')
-nir = product.getBand('B8')
-ndviProduct = Product('NDVI', 'NDVI', width, height)
-ndviBand = ndviProduct.addBand('ndvi', ProductData.TYPE_FLOAT32)
-writer = ProductIO.getProductWriter('BEAM-DIMAP')
+# output product (ndvi) & new band
+output_product = Product('NDVI', 'NDVI', width, height)
+ProductUtils.copyGeoCoding(input_product, output_product)
+output_band = output_product.addBand('ndvi', ProductData.TYPE_FLOAT32)
 
-ProductUtils.copyGeoCoding(product, ndviProduct)
+# output writer
+output_product_writer = ProductIO.getProductWriter('BEAM-DIMAP')
+output_product.setProductWriter(output_product_writer)
+output_product.writeHeader(product_name + '.ndvi.dim')
 
-ndviProduct.setProductWriter(writer)
-ndviProduct.writeHeader('snappy_ndvi_output.dim')
+# compute & save ndvi line by line
+red_row = numpy.zeros(width, dtype=numpy.float32)
+nir_row = numpy.zeros(width, dtype=numpy.float32)
 
-row4 = numpy.zeros(width, dtype=numpy.float32)
-row8 = numpy.zeros(width, dtype=numpy.float32)
+for y in xrange(height):
+    red_row = red_band.readPixels(0, y, width, 1, red_row)
+    nir_row = nir_band.readPixels(0, y, width, 1, nir_row)
+    ndvi = (nir_row - red_row) / (nir_row + red_row)
+    output_band.writePixels(0, y, width, 1, ndvi)
 
-print("Writing...")
-
-for y in range(height):
-    print("processing line ", y, " of ", height)
-    row4 = red.readPixels(0, y, width, 1, row4)
-    row8 = nir.readPixels(0, y, width, 1, row8)
-
-    ndvi = (row8 - row4) / (row8 + row4)
-    ndviBand.writePixels(0, y, width, 1, ndvi)
-
-ndviProduct.closeIO()
-
-print("Done.")
+output_product.closeIO()
